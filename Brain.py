@@ -161,22 +161,6 @@ def get_path(C ,all_points, do_plot ,start ,goal): #= extract_random_points(Scen
             break
     return path, distance,predecessors 
 
-
-## Moved in to Scene...
-##def route(path,all_points):        
-##    Mover = turtle.Turtle()
-##    Mover.pu()
-##    Mover.goto(all_points[path[0]][0],all_points[path[0]][1])
-##    Mover.pd()
-##    Mover.pencolor((150, 150, 30))
-##    Mover.pensize(10)
-##    Mover.speed(3)
-##    for i in range(len(path)-1):
-##        Mover.setheading( Mover.towards(all_points[path[i+1]][0], all_points[path[i+1]][1] ) )
-##        Mover.fd( Mover.distance( all_points[path[i+1]][0], all_points[path[i+1]][1] ))
-##    Mover.pu()
-    #del Mover
-
 def sort_path(path):
     sorted_items = [path[0]]
     unsorted_items = []
@@ -196,42 +180,39 @@ def sort_path(path):
         new_order = sorted_items + unsorted_items
         return sort_path(new_order)
 
-def random_TSP(start, do_plot):
-    pickup_no = 5
+def random_TSP(tsp_coords, do_plot, Scene, all_points, distance, C):
+    pickup_no = len(tsp_coords)
     Feasibility="Infeasible"
 
-    while(Feasibility=="Infeasible"):
-        tsp_coords = []
-        tsp_nodes = []
-        for pickups in range(pickup_no-1): # - 1 for start 
-            rand = extract_random_points(Scene.Warehouse)
-            tsp_coords.append( rand )# Random wherehouse edge
-            tsp_nodes.append(where_in(tsp_coords[pickups],all_points) )# Where are they in all_points
+    #while(Feasibility=="Infeasible"):
+    tsp_nodes = []
+    for pickups in range(pickup_no): # - 1 for start 
+        tsp_nodes.append(where_in(tsp_coords[pickups],all_points) )# Where are they in all_points
 
-        #start = extract_random_points(Scene.Bay) # Random start
-        tsp_coords = [start] + tsp_coords
-        tsp_nodes  = [where_in(start,all_points)] + tsp_nodes 
-
-        links =[]
-        links = [(i,j) for i in tsp_nodes for j in tsp_nodes if (j!=i)]# and not( (j==tsp_nodes[0] and i==tsp_nodes[pickup_no-1]) or (j==tsp_nodes[pickup_no-1] and i==tsp_nodes[0]) )) ]
+    links =[]
+    links = [(i,j) for i in tsp_nodes for j in tsp_nodes if (j!=i)]# and not( (j==tsp_nodes[0] and i==tsp_nodes[pickup_no-1]) or (j==tsp_nodes[pickup_no-1] and i==tsp_nodes[0]) )) ]
         # do not link same nodes to eachother or do not link the start and end.
         
-        prob = LpProblem('tsp',LpMinimize)
-        x = LpVariable.dicts("x",links,0,1,LpInteger)
-        prob.setObjective(sum([distance[i,j]*x[i,j] for (i,j) in links]))
-        for i in tsp_nodes:
-            prob += (sum(x[ic,j] for (ic,j) in links if ic==i)==1)
-        for j in tsp_nodes:
-            prob += (sum(x[i,jc] for (i,jc) in links if jc==j)==1)
-        v = LpVariable.dicts("v",tsp_nodes,0,pickup_no)
-        for (i,j) in links:
-            if j!=tsp_nodes[0]:# or j==tsp_nodes[-1]:
-                prob += (v[j] >= v[i]+1 - pickup_no*( 1 - x[i,j] ))
+    prob = LpProblem('tsp',LpMinimize)
+    x = LpVariable.dicts("x",links,0,1,LpInteger)
+    prob.setObjective(sum([distance[i,j]*x[i,j] for (i,j) in links]))
+    for i in tsp_nodes:
+        prob += (sum(x[ic,j] for (ic,j) in links if ic==i)==1)
+    for j in tsp_nodes:
+        prob += (sum(x[i,jc] for (i,jc) in links if jc==j)==1)
+    v = LpVariable.dicts("v",tsp_nodes,0,pickup_no)
+    for (i,j) in links:
+        if j!=tsp_nodes[0]:# or j==tsp_nodes[-1]:
+            prob += (v[j] >= v[i]+1 - pickup_no*( 1 - x[i,j] ))
 
-        prob.solve()
-        Feasibility = LpStatus[prob.status]
+    prob.solve()
+    Feasibility = LpStatus[prob.status]
         # remove me when happy. 
         #print("Status:", Feasibility)
+    if Feasibility=="Infeasible":
+        print("******************************ERROR*******************************")
+        time.sleep(4)
+        return([],False)
 
     path = []
     path_coords=[]
@@ -247,7 +228,7 @@ def random_TSP(start, do_plot):
                     plt.plot(all_points[pp[points]][0],all_points[pp[points]][1],'b-')
 
     newpath = sort_path(path)
-    return(newpath)
+    return(newpath,True)
 
 def generate_points(Scene, do_plot):
     obstacles = []
@@ -271,56 +252,123 @@ def Roadmap_Gen(all_points, obstacles, do_plot, args):
         for j in range(len(args[i])):
             name = name + str(args[i][j]) + "-"
     longpath = "C:/Users/joeos/OneDrive/Documents/Amazon Warehouse/"
-    path = longpath+"Roadmaps/" +name+".csv"
-    if os.path.exists(path):
-        C = np.genfromtxt(path, delimiter=',')
+    pathC = longpath+"Roadmaps/" +name+".csv"
+    pathVis = longpath+"Roadmaps/Vis" +name+".csv"
+    
+    if os.path.exists(pathC) and os.path.exists(pathVis):
+        C = np.genfromtxt(pathC, delimiter=',')
+        Vis = np.genfromtxt(pathVis, delimiter=',')
+        
         print("Loading Roadmap")
+        if do_plot:
+            for rows in Vis:
+                plt.plot(all_points[[int(rows[0]),int(rows[1])],0],all_points[[int(rows[0]),int(rows[1])],1],'g--') #Plots roadmap paths    
     else:
         path = longpath+"Roadmaps/" +name+".csv"
         print("Generating Roadmap")
         C = np.inf+np.zeros((len(all_points),len(all_points)))
+        Vis = np.zeros((1,2))
         i=1
         for ii in range(len(all_points)):
             for jj in range(ii+1,len(all_points)):
                 if is_visible(all_points[ii],all_points[jj],obstacles):
                     if do_plot:
-                        plt.plot(all_points[[ii,jj],0],all_points[[ii,jj],1],'g--') #Plots roadmap paths
+                        plt.plot(all_points[[ii,jj],0],all_points[[ii,jj],1],'g--') #Plots roadmap paths    
                     C[ii,jj]=np.linalg.norm(all_points[ii]-all_points[jj])
                     C[jj,ii]=C[ii,jj]#RoadMap
-        np.savetxt(path, C, delimiter=",")
+                    Vis = np.append(Vis,[[ii,jj]], axis=0)
+                                    
+        Vis = np.delete(Vis, 0, 0)
+                                    
+        np.savetxt(pathVis, Vis, delimiter=",")                           
+        np.savetxt(pathC, C, delimiter=",")
     return(C)
+
+class brain():
+    def __init__(self):
+        pass
+
+    def set_all_points(self, all_points):
+        self.all_points = all_points
+
+    def set_obstacles(self, obstacles):
+        self.obstacles = obstacles
+
+    def set_C(self, C):
+        self.C = C
+
+    def set_distance(self, distance):
+        self.distance = distance
+
+    def set_predecessors(self, pre):
+        self.predecessors = pre
+
+    def get_all_points(self):
+        return self.all_points
+
+    def get_obstacles(self):
+        return self.obstacles
+
+    def get_C(self):
+        return self.C
+
+    def get_distance(self):
+        return self.distance
+
+    def get_predecessors(self):
+        return self.predecessors
+
 #############################################################################################
 #Builds Warehouse areas# put in a main file when I can.
 #############################################################################################
-args = [[700,900], [0.8], [5,5], [3,1]]
-Scene = Scenery(args[0], args[1][0], args[2], args[3])
-Scene.build()
-Scene.clean_builders()
-Bot_Carl = Bot()
-do_plot= True
+if __name__ == "__main__":
+    root = Tk()
+    root.title("Amazon Warehouse Simulator")
+    args = [[700,900], [0.8], [5,5], [3,1]]
+    Scene = Scenery(root, args[0], args[1][0], args[2], args[3])
+    Scene.build()
+    Scene.clean_builders()
+    Bot_Carl = Bot(Scene.get_canvas())
+
+    Brain = brain()
+    do_plot= True
 
 #############################################################################################
 #Builds Warehouse areas# put in a "Generate Roadmap Func"  
 #############################################################################################
-do_plot= True
-all_points,obstacles = generate_points(Scene,do_plot)
+    do_plot= True
+    all_points,obstacles = generate_points(Scene,do_plot)
 
+    Brain.set_all_points(all_points)
+    Brain.set_obstacles(obstacles)
 #############################################################################################
 #Roadmap Generation# only run me once | put in a "Generate Roadmap Func" 
 #############################################################################################
-do_plot= False
-C = Roadmap_Gen(all_points, obstacles, do_plot, args)
-distance,predecessors = shortest_path(C, return_predecessors=True)
-                    
+    do_plot= True
+    C = Roadmap_Gen(Brain.get_all_points(), Brain.get_obstacles(), do_plot, args)
+    Brain.set_C(C)
+    
+    distance,predecessors = shortest_path(Brain.get_C(), return_predecessors=True)
+    Brain.set_distance(distance)
+    Brain.set_predecessors(predecessors)
 #############################################################################################
 #Travelling Sales Man# put me in a bot class
 #############################################################################################
+    do_plot= True
 
-do_plot= True
-newpath=random_TSP(extract_random_points(Scene.Bay), do_plot)
+    points = []
+    tsp_coords = [extract_random_points(Scene.Bay)]
+    destinations = 5
+    for dest in range(destinations-1): #for start 
+            rand = extract_random_points(Scene.Warehouse)
+            tsp_coords.append( rand )# Random wherehouse edge
 
-for sub_path in newpath:
-    Bot_Carl.do_route(sub_path,all_points)
-        
-if do_plot:
-    plt.show()
+    newpath,success = random_TSP(tsp_coords, do_plot, Scene, Brain.get_all_points()
+                         , Brain.get_distance(), Brain.get_C())
+
+    for sub_path in newpath:
+        Bot_Carl.do_route(sub_path,Brain.get_all_points())
+        Bot_Carl.stamp()
+            
+    if do_plot:
+        plt.show()
